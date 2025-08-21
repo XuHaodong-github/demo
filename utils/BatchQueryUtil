@@ -17,6 +17,118 @@ public class BatchQueryUtil {
     // 默认批次大小
     private static final int DEFAULT_BATCH_SIZE = 30;
 
+
+
+    /**
+     * 批次拆分入参
+     * 拆分后的结果是[[1,2,3],[1,2,3]]
+     *
+     * @param items 待处理列表
+     * @param <T>   输入数据类型
+     * @return 拆分后的入参
+     */
+    public static <T> List<List<T>> splitParamList(List<T> items) {
+        List<List<T>> result = new ArrayList<>();
+        if (items == null || items.isEmpty()) {
+            return result;
+        }
+
+        int size = items.size();
+        for (int i = 0; i < size; i += DEFAULT_BATCH_SIZE) {
+            int end = Math.min(i + DEFAULT_BATCH_SIZE, size);
+            List<T> batch = items.subList(i, end);
+            result.add(batch);
+        }
+
+        return result;
+    }
+
+
+    /**
+     * 批次拆分入参
+     * 拆分后的结果是 [["1,2,3"],["1,2,3"]]
+     *
+     * @param items 待处理列表
+     * @param <T>   输入数据类型
+     * @return 拆分后的入参
+     */
+    public static <T> List<String> splitParamListStringCommaJoin(List<T> items) {
+        List<String> result = new ArrayList<>();
+        if (items == null || items.isEmpty()) {
+            return result;
+        }
+
+        int size = items.size();
+        for (int i = 0; i < size; i += DEFAULT_BATCH_SIZE) {
+            int end = Math.min(i + DEFAULT_BATCH_SIZE, size);
+            List<T> batch = items.subList(i, end);
+            String batchStrCommaJoin = batch.stream().map(String::valueOf).collect(Collectors.joining(","));
+            result.add(batchStrCommaJoin);
+        }
+
+        return result;
+    }
+
+
+    /**
+     * 同步分批查询（单线程）
+     * 入参出参 1:n
+     * @param items     待处理列表
+     * @param processor 处理函数，接收一批数据，返回处理结果
+     * @param <T>       输入数据类型
+     * @param <R>       返回数据类型
+     * @return 合并后的所有结果
+     */
+    public static <T, R> List<R> batchQuerySingleParamIn(List<T> items, Function<T, List<R>> processor) {
+        List<R> result = new ArrayList<>();
+        if (items == null || items.isEmpty()) {
+            return result;
+        }
+
+        int size = items.size();
+
+        for (int i = 0; i < size; i += DEFAULT_BATCH_SIZE) {
+            int end = Math.min(i + DEFAULT_BATCH_SIZE, size);
+            List<T> batchParam = items.subList(i, end);
+            List<R> batchResult = batchParam.stream().map(processor).flatMap(List::stream).collect(Collectors.toList());
+            result.addAll(batchResult);
+        }
+
+        return result;
+    }
+
+
+    /**
+     * 同步分批查询（单线程）
+     * 入参出参 1:n
+     * @param items     待处理列表
+     * @param batchSize 每批大小
+     * @param processor 处理函数，接收一批数据，返回处理结果
+     * @param <T>       输入数据类型
+     * @param <R>       返回数据类型
+     * @return 合并后的所有结果
+     */
+    public static <T, R> List<R> batchQuerySingleParamIn(List<T> items, Integer batchSize, Function<T, List<R>> processor) {
+        List<R> result = new ArrayList<>();
+        if (items == null || items.isEmpty()) {
+            return result;
+        }
+
+        int size = items.size();
+        batchSize = Objects.isNull(batchSize) || batchSize <= 0 ? DEFAULT_BATCH_SIZE : batchSize;
+
+        for (int i = 0; i < size; i += batchSize) {
+            int end = Math.min(i + batchSize, size);
+            List<T> batchParam = items.subList(i, end);
+            List<R> batchResult = batchParam.stream().map(processor).flatMap(List::stream).collect(Collectors.toList());
+            result.addAll(batchResult);
+        }
+
+        return result;
+    }
+
+
+
     /**
      * 同步分批查询（单线程）
      *
