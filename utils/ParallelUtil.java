@@ -1,3 +1,4 @@
+// 单个id查询方法批量多线程查，查完的结果构成一个id - result map
 public class ParallelUtil {
     private static final long TIME_OUT = 1000L;
 
