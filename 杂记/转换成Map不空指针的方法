@@ -1,0 +1,1 @@
+return threadPoolConfigList.stream().collect(HashMap::new, (map, item) -> map.put(item.getThreadPoolName(), item), HashMap::putAll);
