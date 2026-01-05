@@ -1,79 +1,126 @@
-// 单个id查询方法批量多线程查，查完的结果构成一个id - result map
+/**
+ * 并行执行工具类
+ */
+@Service
 public class ParallelUtil {
-    private static final long TIME_OUT = 1000L;
 
-    public <T, U> Map<T, U> parallelInvokeMap(List<T> paramList, Function<T, U> function, ThreadPoolExecutor threadPoolExecutor) {
+    /**
+     * 默认并行超时时间，毫秒
+     */
+    private static final long DEFAULT_TIME_OUT_MILLISECONDS = 2000L;
+
+    public static final String CAT_EVENT = "ParallelUtil";
+
+    /**
+     * 指定线程池批量查询
+     * 返回值是单个的形式，入参和出参1:1
+     *
+     * @param paramList       入参List
+     * @param function        执行方法
+     * @param executorService 线程池
+     * @param <T>             入参泛型
+     * @param <U>             出参泛型
+     * @return 查询结果
+     */
+    public static <T, U> List<U> parallelInvoke(List<T> paramList, Function<T, U> function, ExecutorService executorService) {
+
         if (CollectionUtils.isEmpty(paramList)) {
-            return new HashMap<>();
-        }
-
-        Map<T, U> resultMap = new ConcurrentHashMap<>();
-        List<CompletableFuture<Void>> allAsyncFutureList = new ArrayList<>();
-        paramList.forEach(param -> {
-            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                try {
-                    U result = function.apply(param);
-                    LogUtil.info("parallelInvokeMap param={}, result={}", JsonUtils.toJson(param), JsonUtils.toJson(result));
-                    if (Objects.nonNull(result)) {
-                        resultMap.put(param, result);
-                    }
-                } catch (Exception e) {
-                    Cat.logEvent("parallelInvokeMap", "Exception");
-                    LogUtil.error("parallelInvokeMap Exception param={}", JsonUtils.toJson(param), e);
-                }
-
-            }, threadPoolExecutor);
-            allAsyncFutureList.add(future);
-        });
-
-        try {
-            CompletableFuture.allOf(allAsyncFutureList.toArray(new CompletableFuture[0])).get(TIME_OUT, TimeUnit.MILLISECONDS);
-        } catch (Exception e) {
-            Cat.logEvent("parallelInvokeMap", "CompletableFutureException");
-            LogUtil.error("CompletableFutureException paramList={}", JsonUtils.toJson(paramList), e);
-        }
-
-        LogUtil.info("paramList={}, resultMap={}", JsonUtils.toJson(paramList), JsonUtils.toJson(resultMap));
-        return resultMap;
-    }
-
-    public <T, U> List<U> parallelInvokeList(List<T> paramList, Function<T, U> function, ThreadPoolExecutor threadPoolExecutor) {
-        Map<T, U> resultMap = parallelInvokeMap(paramList, function, threadPoolExecutor);
-        return new ArrayList<>(resultMap.values());
-    }
-
-    public <T, U> List<U> parallelInvokeBatchList(List<T> paramList, Function<T, List<U>> function, ThreadPoolExecutor threadPoolExecutor) {
-        if (CollectionUtils.isEmpty(paramList)) {
+            Cat.logEvent(CAT_EVENT, "parallelInvokeList EMPTY PARAM");
             return new ArrayList<>();
         }
 
-        List<U> resultList = Collections.synchronizedList(new ArrayList<>());
+        // 最终执行结果
+        Map<T, U> resultMap = new ConcurrentHashMap<>();
+        // 并发执行中间结果
         List<CompletableFuture<Void>> allAsyncFutureList = new ArrayList<>();
-        paramList.forEach(param -> {
-            CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
-                try {
+
+        // 并发执行
+        for (T param : paramList) {
+            try {
+                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
+                    U result = function.apply(param);
+                    LogUtil.info("param={}, result={}", JsonUtils.toJson(param), JsonUtils.toJson(result));
+                    if (Objects.nonNull(result)) {
+                        resultMap.put(param, result);
+                    }
+                }, executorService);
+                allAsyncFutureList.add(future);
+            } catch (Exception e) {
+                // 捕获异常，单个执行失败不影响其他并行任务
+                Cat.logEvent(CAT_EVENT, "parallelInvokeList runAsync Exception");
+                LogUtil.error("Exception param={}", JsonUtils.toJson(param), e);
+            }
+        }
+
+        try {
+            CompletableFuture.allOf(allAsyncFutureList.toArray(new CompletableFuture[0])).get(DEFAULT_TIME_OUT_MILLISECONDS, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            Cat.logEvent(CAT_EVENT, "parallelInvokeList Exception");
+            LogUtil.error("Exception paramList={}, e->", JsonUtils.toJson(paramList), e);
+        }
+
+        // 查询结果日志
+        LogUtil.info("paramList={}, resultMap={}", JsonUtils.toJson(paramList), JsonUtils.toJson(resultMap));
+
+        // 查询结果，移除重复参数查询
+        return new ArrayList<>(resultMap.values());
+    }
+
+    /**
+     * 指定线程池批量查询
+     * 返回值是List的形式，入参和出参1:n
+     *
+     * @param paramList       入参List
+     * @param function        执行方法
+     * @param executorService 线程池
+     * @param <T>             入参泛型
+     * @param <U>             出参泛型
+     * @return 查询结果
+     */
+    public static <T, U> List<U> parallelInvokeList(List<T> paramList, Function<T, List<U>> function, ExecutorService executorService) {
+
+        if (CollectionUtils.isEmpty(paramList)) {
+            Cat.logEvent(CAT_EVENT, "parallelInvokeBatchList EMPTY PARAM");
+            return new ArrayList<>();
+        }
+
+        // 最终执行结果
+        List<U> resultList = Collections.synchronizedList(new ArrayList<>());
+        // 并发执行中间结果
+        List<CompletableFuture<Void>> allAsyncFutureList = new ArrayList<>();
+
+        // 并发执行
+        for (T param : paramList) {
+            try {
+                CompletableFuture<Void> future = CompletableFuture.runAsync(() -> {
                     List<U> result = function.apply(param);
                     LogUtil.info("parallelInvokeBatchList param={}, result={}", JsonUtils.toJson(param), JsonUtils.toJson(result));
                     if (CollectionUtils.isNotEmpty(result)) {
                         resultList.addAll(result);
                     }
-                } catch (Exception e) {
-                    Cat.logEvent("parallelInvokeBatchList", "Exception");
-                    LogUtil.error("parallelInvokeBatchList Exception param={}", JsonUtils.toJson(param), e);
-                }
-
-            }, threadPoolExecutor);
-            allAsyncFutureList.add(future);
-        });
-
-        try {
-            CompletableFuture.allOf(allAsyncFutureList.toArray(new CompletableFuture[0])).get(TIME_OUT, TimeUnit.MILLISECONDS);
-        } catch (Exception e) {
-            Cat.logEvent("parallelInvokeBatchList", "CompletableFutureException");
-            LogUtil.error("CompletableFutureException paramList={}", JsonUtils.toJson(paramList), e);
+                }, executorService);
+                allAsyncFutureList.add(future);
+            } catch (Exception e) {
+                // 捕获异常，单个执行失败不影响其他并行任务
+                Cat.logEvent(CAT_EVENT, "parallelInvokeBatchList runAsync Exception");
+                LogUtil.error("Exception param={}, e->", JsonUtils.toJson(param), e);
+            }
         }
 
+        // 获取并发结果
+        try {
+            CompletableFuture.allOf(allAsyncFutureList.toArray(new CompletableFuture[0])).get(DEFAULT_TIME_OUT_MILLISECONDS, TimeUnit.MILLISECONDS);
+        } catch (Exception e) {
+            Cat.logEvent("parallelInvokeBatchList", "parallelInvokeList runAsync Exception");
+            LogUtil.error("Exception paramList={}", JsonUtils.toJson(paramList), e);
+        }
+
+        // 查询结果日志
         LogUtil.info("paramList={}, resultList={}", JsonUtils.toJson(paramList), JsonUtils.toJson(resultList));
+
+        // 查询结果
         return resultList;
     }
+
+
 }
